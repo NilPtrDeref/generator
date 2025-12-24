@@ -65,6 +65,12 @@ pub fn Yielder(T: type) type {
     };
 }
 
+const Context = struct {
+    rsp: u64 = 0,
+    rbp: u64 = 0,
+    rip: u64 = 0,
+};
+
 // Requires a function as well as its calling parameters and result type. It is the responsibility of the caller to manage non-stack memory within the generator.
 pub fn Generator(f: anytype, args: ArgsTupleMinusFirst(@TypeOf(f)), T: type) type {
     // Enforce that parameter requirements are met of the caller
@@ -95,8 +101,8 @@ pub fn Generator(f: anytype, args: ArgsTupleMinusFirst(@TypeOf(f)), T: type) typ
         };
 
         // Manage stack pointers for the caller and the current generator
-        rsp: u64,
-        idle: u64,
+        current: Context,
+        idle: Context,
 
         // Manage result value passing
         interface: Yielder(T),
@@ -106,12 +112,12 @@ pub fn Generator(f: anytype, args: ArgsTupleMinusFirst(@TypeOf(f)), T: type) typ
 
         // Stack of the generator coroutine
         stack: []align(16) u8,
+        args: ArgsTupleMinusFirst(@TypeOf(f)),
 
         pub fn init(gpa: Allocator) !*Self {
             var self = try gpa.create(Self);
             errdefer gpa.destroy(self);
 
-            self.idle = 0;
             self.interface = .{
                 .ctx = self,
                 .vtable = &.{
@@ -119,6 +125,7 @@ pub fn Generator(f: anytype, args: ArgsTupleMinusFirst(@TypeOf(f)), T: type) typ
                 },
             };
             self.state = .ready;
+            self.args = args;
             self.stack = try gpa.alignedAlloc(u8, .@"16", 4096);
             @memset(self.stack, 0);
             errdefer gpa.free(self.stack);
@@ -128,37 +135,25 @@ pub fn Generator(f: anytype, args: ArgsTupleMinusFirst(@TypeOf(f)), T: type) typ
                     // Pull the self pointer out of the %rdi register
                     const s: *Self = asm volatile (
                         \\
-                        : [ret] "={rdi}" (-> *Self),
+                        : [ret] "={rbx}" (-> *Self),
                     );
 
-                    @call(.auto, f, .{s.interface} ++ args);
+                    @call(.auto, f, .{s.interface} ++ s.args);
 
                     // When the generator function returns, we should mark the Generator as finished and then switch back to the calling context
                     s.state = .finished;
-                    asm volatile (
-                        \\ callq %[f]
-                        :
-                        : [f] "{rdi}" (&Self.switch_context),
-                          [src] "{rsi}" (&s.rsp),
-                          [dest] "{rdx}" (&s.idle),
-                    );
+                    Self.switch_context(&s.current, &s.idle);
                 }
             };
 
             // Initialize stack
             // Prime the values that will be used if the function returns
-            self.rsp = @intFromPtr(self.stack.ptr) + (self.stack.len - 8);
-            @as(*u64, @ptrFromInt(self.rsp)).* = @intFromPtr(&TypeErased.start); // Set the function to be executed for generation
-            self.rsp -= 8;
-            @as(*u64, @ptrFromInt(self.rsp)).* = self.rsp; // Set the rbp (for generation)
-            self.rsp -= 8; // push rax
-            self.rsp -= 8; // push rdx
-            self.rsp -= 8; // push rcx
-            self.rsp -= 8; // push rbx
-            self.rsp -= 8; // push r12
-            self.rsp -= 8; // push r13
-            self.rsp -= 8; // push r14
-            self.rsp -= 8; // push r15
+            self.current.rsp = @intFromPtr(self.stack.ptr) + (self.stack.len - 8);
+            @as(*u64, @ptrFromInt(self.current.rsp)).* = @intFromPtr(&TypeErased.start); // Set the function to be executed for generation
+            self.current.rsp -= 8;
+
+            self.current.rbp = self.current.rsp;
+            self.current.rip = @intFromPtr(&TypeErased.start);
 
             return self;
         }
@@ -166,38 +161,23 @@ pub fn Generator(f: anytype, args: ArgsTupleMinusFirst(@TypeOf(f)), T: type) typ
         pub fn yield(ctx: *anyopaque, data: T) void {
             const self: *Self = @ptrCast(@alignCast(ctx));
             @memcpy(&self.result, std.mem.asBytes(&data));
-
-            asm volatile (
-                \\ callq %[f]
-                :
-                : [f] "{rdi}" (&Self.switch_context),
-                  [src] "{rsi}" (&self.rsp),
-                  [dest] "{rdx}" (&self.idle),
-            );
+            Self.switch_context(&self.current, &self.idle);
         }
 
         pub fn next(self: *Self) ?T {
+            const s = self;
             switch (self.state) {
                 .ready => {
                     self.state = .running;
-                    // FIXME: Building in ReleaseFast mode fails because %rax is not seen as a valid operand for callq??? (Tried with %rdi and still didn't work.)
                     asm volatile (
-                        \\ callq %[f]
+                        \\
                         :
-                        : [f] "{rax}" (&Self.switch_context),
-                          [self] "{rdi}" (self),
-                          [src] "{rsi}" (&self.idle),
-                          [dest] "{rdx}" (&self.rsp),
+                        : [self] "{rbx}" (s),
                     );
+                    Self.switch_context(&s.idle, &s.current);
                 },
                 .running => {
-                    asm volatile (
-                        \\ callq %[f]
-                        :
-                        : [f] "{rdi}" (&Self.switch_context),
-                          [src] "{rsi}" (&self.idle),
-                          [dest] "{rdx}" (&self.rsp),
-                    );
+                    Self.switch_context(&s.idle, &s.current);
                 },
                 .finished => {
                     return null;
@@ -205,39 +185,27 @@ pub fn Generator(f: anytype, args: ArgsTupleMinusFirst(@TypeOf(f)), T: type) typ
             }
 
             // Check after the ready or running state to make sure that the last call into the generator function didn't mark it as finished
-            if (self.state == .finished) return null;
+            std.debug.print("Generator location: {*}\n", .{self});
+            if (s.state == .finished) return null;
 
             var result: T = undefined;
-            @memcpy(std.mem.asBytes(&result), &self.result);
+            @memcpy(std.mem.asBytes(&result), &s.result);
             return result;
         }
 
-        // Note: By default, the compiler is adds additional instructions after volatile assembly. Using callconv(.naked) to enforce requirements on the asm.
-        pub fn switch_context() callconv(.naked) void {
+        pub inline fn switch_context(from: *Context, to: *Context) void {
             asm volatile (
-                \\ pushq %%rbp
-                \\ pushq %%rax
-                \\ pushq %%rdx
-                \\ pushq %%rcx
-                \\ pushq %%rbx
-                \\ pushq %%r12
-                \\ pushq %%r13
-                \\ pushq %%r14
-                \\ pushq %%r15
-                \\
-                \\ movq %%rsp, (%%rsi)
-                \\ movq (%%rdx), %%rsp
-                \\
-                \\ popq %%r15
-                \\ popq %%r14
-                \\ popq %%r13
-                \\ popq %%r12
-                \\ popq %%rbx
-                \\ popq %%rcx
-                \\ popq %%rdx
-                \\ popq %%rax
-                \\ popq %%rbp
-                \\ ret
+                \\ leaq 0f(%%rip), %%rdx
+                \\ movq %%rsp, 0(%%rax)
+                \\ movq %%rbp, 8(%%rax)
+                \\ movq %%rdx, 16(%%rax)
+                \\ movq 0(%%rcx), %%rsp
+                \\ movq 8(%%rcx), %%rbp
+                \\ jmpq *16(%%rcx)
+                \\ 0:
+                :
+                : [from] "{rax}" (from),
+                  [to] "{rcx}" (to),
             );
         }
 
@@ -274,8 +242,14 @@ pub fn main() !void {
     // const trimnum = std.mem.trim(u8, strnum, "\n");
     // const num: u64 = try std.fmt.parseInt(u64, trimnum, 10);
 
+    // FIXME: Generator returning one extra result. For some reason, the next function doesn't realize that the state is "finished" until we leave the function.
+    // I'm probably clobbering the value of 'self' in the switch for ready state, it seems to be running the ready state every time.
+    // Upon further investigation, this seems to be the case. The starting address in the next function is different than the ending address.
+    // Need to look at how I can store the value on the stack and restore afterwards.
     var generator: *Generator(fib, .{4}, u64) = try .init(gpa);
+    std.debug.print("Generator starting location: {*}\n", .{generator});
     while (generator.next()) |i| {
+        std.debug.print("Generator state: {any}\n", .{generator.state});
         std.debug.print("Got result from generator: {d}\n", .{i});
     }
 
