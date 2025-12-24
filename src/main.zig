@@ -246,6 +246,8 @@ pub fn main() !void {
     // I'm probably clobbering the value of 'self' in the switch for ready state, it seems to be running the ready state every time.
     // Upon further investigation, this seems to be the case. The starting address in the next function is different than the ending address.
     // Need to look at how I can store the value on the stack and restore afterwards.
+    // OR
+    // Look into storing the ctx in the Context type as an anyopaque that the start function can access.
     var generator: *Generator(fib, .{4}, u64) = try .init(gpa);
     std.debug.print("Generator starting location: {*}\n", .{generator});
     while (generator.next()) |i| {
