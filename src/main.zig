@@ -184,7 +184,7 @@ pub fn Generator(f: anytype, args: ArgsTupleMinusFirst(@TypeOf(f)), T: type) typ
                     asm volatile (
                         \\ callq %[f]
                         :
-                        : [f] "{rax}" (&Self.start_context),
+                        : [f] "{rax}" (&Self.switch_context),
                           [self] "{rdi}" (self),
                           [src] "{rsi}" (&self.idle),
                           [dest] "{rdx}" (&self.rsp),
@@ -210,36 +210,6 @@ pub fn Generator(f: anytype, args: ArgsTupleMinusFirst(@TypeOf(f)), T: type) typ
             var result: T = undefined;
             @memcpy(std.mem.asBytes(&result), &self.result);
             return result;
-        }
-
-        // Note: By default, the compiler is adds additional instructions after volatile assembly. Using callconv(.naked) to enforce requirements on the asm.
-        // Expects self pointer in %rdi
-        pub fn start_context() callconv(.naked) void {
-            asm volatile (
-                \\ pushq %%rbp
-                \\ pushq %%rax
-                \\ pushq %%rdx
-                \\ pushq %%rcx
-                \\ pushq %%rbx
-                \\ pushq %%r12
-                \\ pushq %%r13
-                \\ pushq %%r14
-                \\ pushq %%r15
-                \\
-                \\ movq %%rsp, (%%rsi)
-                \\ movq (%%rdx), %%rsp
-                \\
-                \\ popq %%r15
-                \\ popq %%r14
-                \\ popq %%r13
-                \\ popq %%r12
-                \\ popq %%rbx
-                \\ popq %%rcx
-                \\ popq %%rdx
-                \\ popq %%rax
-                \\ popq %%rbp
-                \\ ret
-            );
         }
 
         // Note: By default, the compiler is adds additional instructions after volatile assembly. Using callconv(.naked) to enforce requirements on the asm.
