@@ -132,7 +132,7 @@ pub fn Generator(f: anytype, args: ArgsTupleMinusFirst(@TypeOf(f)), T: type) typ
 
             const TypeErased = struct {
                 fn start() void {
-                    // Pull the self pointer out of the %rdi register
+                    // TODO: Replace with pulling current context pointer from struct and @fieldParentPtr instead of clobbering rbx
                     const s: *Self = asm volatile (
                         \\
                         : [ret] "={rbx}" (-> *Self),
@@ -169,6 +169,7 @@ pub fn Generator(f: anytype, args: ArgsTupleMinusFirst(@TypeOf(f)), T: type) typ
             switch (self.state) {
                 .ready => {
                     self.state = .running;
+                    // TODO: Replace with pulling current context pointer from struct and @fieldParentPtr instead of clobbering rbx
                     asm volatile (
                         \\
                         :
