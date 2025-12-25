@@ -188,23 +188,6 @@ pub fn Generator(f: anytype, args: ArgsTupleMinusFirst(@TypeOf(f)), T: type) typ
         }
 
         pub inline fn switch_context(from: *Context, to: *Context) void {
-            // Save registers on the stack
-            asm volatile (
-                \\ pushq %%rax
-                \\ pushq %%rcx
-                \\ pushq %%rdx
-                \\ pushq %%rdi
-                \\ pushq %%rsi
-                \\ pushq %%r8
-                \\ pushq %%r9
-                \\ pushq %%r10
-                \\ pushq %%r11
-                \\ pushq %%r12
-                \\ pushq %%r13
-                \\ pushq %%r14
-                \\ pushq %%r15
-            );
-
             // leaq 0f sets to the next '0' label after the current rip. (Which is at the end of this block.)
             asm volatile (
                 \\ leaq 0f(%%rip), %%rdx
@@ -218,24 +201,68 @@ pub fn Generator(f: anytype, args: ArgsTupleMinusFirst(@TypeOf(f)), T: type) typ
                 :
                 : [from] "{rax}" (from),
                   [to] "{rcx}" (to),
-            );
-
-            // This point on is run after you return from the context switch
-            asm volatile (
-                \\ popq %%r15
-                \\ popq %%r14
-                \\ popq %%r13
-                \\ popq %%r12
-                \\ popq %%r11
-                \\ popq %%r10
-                \\ popq %%r9
-                \\ popq %%r8
-                \\ popq %%rsi
-                \\ popq %%rdi
-                \\ popq %%rdx
-                \\ popq %%rcx
-                \\ popq %%rax
-            );
+                : .{
+                  .rax = true,
+                  .rcx = true,
+                  .rdx = true,
+                  .rbx = true,
+                  .rsi = true,
+                  .rdi = true,
+                  .r8 = true,
+                  .r9 = true,
+                  .r10 = true,
+                  .r11 = true,
+                  .r12 = true,
+                  .r13 = true,
+                  .r14 = true,
+                  .r15 = true,
+                  .mm0 = true,
+                  .mm1 = true,
+                  .mm2 = true,
+                  .mm3 = true,
+                  .mm4 = true,
+                  .mm5 = true,
+                  .mm6 = true,
+                  .mm7 = true,
+                  .zmm0 = true,
+                  .zmm1 = true,
+                  .zmm2 = true,
+                  .zmm3 = true,
+                  .zmm4 = true,
+                  .zmm5 = true,
+                  .zmm6 = true,
+                  .zmm7 = true,
+                  .zmm8 = true,
+                  .zmm9 = true,
+                  .zmm10 = true,
+                  .zmm11 = true,
+                  .zmm12 = true,
+                  .zmm13 = true,
+                  .zmm14 = true,
+                  .zmm15 = true,
+                  .zmm16 = true,
+                  .zmm17 = true,
+                  .zmm18 = true,
+                  .zmm19 = true,
+                  .zmm20 = true,
+                  .zmm21 = true,
+                  .zmm22 = true,
+                  .zmm23 = true,
+                  .zmm24 = true,
+                  .zmm25 = true,
+                  .zmm26 = true,
+                  .zmm27 = true,
+                  .zmm28 = true,
+                  .zmm29 = true,
+                  .zmm30 = true,
+                  .zmm31 = true,
+                  .fpsr = true,
+                  .fpcr = true,
+                  .mxcsr = true,
+                  .rflags = true,
+                  .dirflag = true,
+                  .memory = true,
+                });
         }
 
         pub fn deinit(self: *Self, gpa: Allocator) void {
