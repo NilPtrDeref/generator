@@ -259,6 +259,7 @@ fn fib(y: Yielder(u64), max: u64) void {
 }
 
 // TODO: Convert main function to a test in preparation for deployment to github
+// TODO: Comment out functions better. It's not exactly transparent.
 pub fn main() !void {
     var gpa_impl = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa_impl.deinit();
