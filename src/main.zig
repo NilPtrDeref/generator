@@ -148,11 +148,11 @@ pub fn Generator(f: anytype, args: ArgsTupleMinusFirst(@TypeOf(f)), T: type) typ
 
             // Initialize stack
             // Prime the values that will be used if the function returns
-            self.current.rsp = @intFromPtr(self.stack.ptr) + (self.stack.len - 8);
+            self.current.rbp = @intFromPtr(self.stack.ptr) + (self.stack.len);
+            self.current.rsp = @intFromPtr(self.stack.ptr) + (self.stack.len);
             @as(*u64, @ptrFromInt(self.current.rsp)).* = @intFromPtr(&TypeErased.start); // Set the function to be executed for generation
             self.current.rsp -= 8;
 
-            self.current.rbp = self.current.rsp;
             self.current.rip = @intFromPtr(&TypeErased.start);
 
             return self;
@@ -165,7 +165,6 @@ pub fn Generator(f: anytype, args: ArgsTupleMinusFirst(@TypeOf(f)), T: type) typ
         }
 
         pub fn next(self: *Self) ?T {
-            // std.debug.print("Generator location at start: {*}\n", .{self});
             switch (self.state) {
                 .ready => {
                     self.state = .running;
@@ -180,7 +179,7 @@ pub fn Generator(f: anytype, args: ArgsTupleMinusFirst(@TypeOf(f)), T: type) typ
             }
 
             // Check after the ready or running state to make sure that the last call into the generator function didn't mark it as finished
-            std.debug.print("Generator location at end: {*}\n", .{self});
+            std.debug.print("Generator state: {any}\n", .{self.state});
             if (self.state == .finished) return null;
 
             var result: T = undefined;
@@ -194,6 +193,16 @@ pub fn Generator(f: anytype, args: ArgsTupleMinusFirst(@TypeOf(f)), T: type) typ
                 \\ pushq %%rax
                 \\ pushq %%rcx
                 \\ pushq %%rdx
+                \\ pushq %%rdi
+                \\ pushq %%rsi
+                \\ pushq %%r8
+                \\ pushq %%r9
+                \\ pushq %%r10
+                \\ pushq %%r11
+                \\ pushq %%r12
+                \\ pushq %%r13
+                \\ pushq %%r14
+                \\ pushq %%r15
             );
 
             // leaq 0f sets to the next '0' label after the current rip. (Which is at the end of this block.)
@@ -213,6 +222,16 @@ pub fn Generator(f: anytype, args: ArgsTupleMinusFirst(@TypeOf(f)), T: type) typ
 
             // This point on is run after you return from the context switch
             asm volatile (
+                \\ popq %%r15
+                \\ popq %%r14
+                \\ popq %%r13
+                \\ popq %%r12
+                \\ popq %%r11
+                \\ popq %%r10
+                \\ popq %%r9
+                \\ popq %%r8
+                \\ popq %%rsi
+                \\ popq %%rdi
                 \\ popq %%rdx
                 \\ popq %%rcx
                 \\ popq %%rax
@@ -252,16 +271,8 @@ pub fn main() !void {
     // const trimnum = std.mem.trim(u8, strnum, "\n");
     // const num: u64 = try std.fmt.parseInt(u64, trimnum, 10);
 
-    // FIXME: Generator returning one extra result. For some reason, the next function doesn't realize that the state is "finished" until we leave the function.
-    // I'm probably clobbering the value of 'self' in the switch for ready state, it seems to be running the ready state every time.
-    // Upon further investigation, this seems to be the case. The starting address in the next function is different than the ending address.
-    // Need to look at how I can store the value on the stack and restore afterwards.
-    // OR
-    // Look into storing the ctx in the Context type as an anyopaque that the start function can access.
     var generator: *Generator(fib, .{4}, u64) = try .init(gpa);
-    std.debug.print("Generator starting location: {*}\n", .{generator});
     while (generator.next()) |i| {
-        std.debug.print("Generator state: {any}\n", .{generator.state});
         std.debug.print("Got result from generator: {d}\n", .{i});
     }
 
