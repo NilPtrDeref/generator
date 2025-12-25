@@ -132,11 +132,11 @@ pub fn Generator(f: anytype, args: ArgsTupleMinusFirst(@TypeOf(f)), T: type) typ
 
             const TypeErased = struct {
                 fn start() void {
-                    // TODO: Replace with pulling current context pointer from struct and @fieldParentPtr instead of clobbering rbx
-                    const s: *Self = asm volatile (
+                    const current: *Context = asm volatile (
                         \\
-                        : [ret] "={rbx}" (-> *Self),
+                        : [ret] "={rcx}" (-> *Context),
                     );
+                    const s: *Self = @fieldParentPtr("current", current);
 
                     @call(.auto, f, .{s.interface} ++ s.args);
 
@@ -165,20 +165,14 @@ pub fn Generator(f: anytype, args: ArgsTupleMinusFirst(@TypeOf(f)), T: type) typ
         }
 
         pub fn next(self: *Self) ?T {
-            const s = self;
+            // std.debug.print("Generator location at start: {*}\n", .{self});
             switch (self.state) {
                 .ready => {
                     self.state = .running;
-                    // TODO: Replace with pulling current context pointer from struct and @fieldParentPtr instead of clobbering rbx
-                    asm volatile (
-                        \\
-                        :
-                        : [self] "{rbx}" (s),
-                    );
-                    Self.switch_context(&s.idle, &s.current);
+                    Self.switch_context(&self.idle, &self.current);
                 },
                 .running => {
-                    Self.switch_context(&s.idle, &s.current);
+                    Self.switch_context(&self.idle, &self.current);
                 },
                 .finished => {
                     return null;
@@ -186,15 +180,23 @@ pub fn Generator(f: anytype, args: ArgsTupleMinusFirst(@TypeOf(f)), T: type) typ
             }
 
             // Check after the ready or running state to make sure that the last call into the generator function didn't mark it as finished
-            std.debug.print("Generator location: {*}\n", .{self});
-            if (s.state == .finished) return null;
+            std.debug.print("Generator location at end: {*}\n", .{self});
+            if (self.state == .finished) return null;
 
             var result: T = undefined;
-            @memcpy(std.mem.asBytes(&result), &s.result);
+            @memcpy(std.mem.asBytes(&result), &self.result);
             return result;
         }
 
         pub inline fn switch_context(from: *Context, to: *Context) void {
+            // Save registers on the stack
+            asm volatile (
+                \\ pushq %%rax
+                \\ pushq %%rcx
+                \\ pushq %%rdx
+            );
+
+            // leaq 0f sets to the next '0' label after the current rip. (Which is at the end of this block.)
             asm volatile (
                 \\ leaq 0f(%%rip), %%rdx
                 \\ movq %%rsp, 0(%%rax)
@@ -207,6 +209,13 @@ pub fn Generator(f: anytype, args: ArgsTupleMinusFirst(@TypeOf(f)), T: type) typ
                 :
                 : [from] "{rax}" (from),
                   [to] "{rcx}" (to),
+            );
+
+            // This point on is run after you return from the context switch
+            asm volatile (
+                \\ popq %%rdx
+                \\ popq %%rcx
+                \\ popq %%rax
             );
         }
 
