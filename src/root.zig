@@ -284,7 +284,6 @@ fn fib(y: Yielder(u64), max: u64) void {
     }
 }
 
-// TODO: Convert main function to a test in preparation for deployment to github
 // TODO: Comment out functions better. It's not exactly transparent.
 test "Generator" {
     // Capable of runtime-known input parameters.
