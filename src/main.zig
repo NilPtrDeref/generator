@@ -72,7 +72,7 @@ const Context = struct {
 };
 
 // Requires a function as well as its calling parameters and result type. It is the responsibility of the caller to manage non-stack memory within the generator.
-pub fn Generator(f: anytype, args: ArgsTupleMinusFirst(@TypeOf(f)), T: type) type {
+pub fn Generator(f: anytype, T: type) type {
     // Enforce that parameter requirements are met of the caller
     comptime {
         const t = @typeInfo(@TypeOf(f));
@@ -114,7 +114,7 @@ pub fn Generator(f: anytype, args: ArgsTupleMinusFirst(@TypeOf(f)), T: type) typ
         stack: []align(16) u8,
         args: ArgsTupleMinusFirst(@TypeOf(f)),
 
-        pub fn init(gpa: Allocator) !*Self {
+        pub fn init(gpa: Allocator, args: ArgsTupleMinusFirst(@TypeOf(f))) !*Self {
             var self = try gpa.create(Self);
             errdefer gpa.destroy(self);
 
@@ -179,7 +179,6 @@ pub fn Generator(f: anytype, args: ArgsTupleMinusFirst(@TypeOf(f)), T: type) typ
             }
 
             // Check after the ready or running state to make sure that the last call into the generator function didn't mark it as finished
-            std.debug.print("Generator state: {any}\n", .{self.state});
             if (self.state == .finished) return null;
 
             var result: T = undefined;
@@ -292,16 +291,15 @@ pub fn main() !void {
     defer _ = gpa_impl.deinit();
     const gpa = gpa_impl.allocator();
 
-    // FIXME: Get non-comptime args working if possible.
-    // var buffer: [64]u8 = undefined;
-    // var r = std.fs.File.stdin().reader(&buffer);
-    // const strnum = try r.interface.takeDelimiterExclusive('\n');
-    // const trimnum = std.mem.trim(u8, strnum, "\n");
-    // const num: u64 = try std.fmt.parseInt(u64, trimnum, 10);
+    var buffer: [64]u8 = undefined;
+    var r = std.fs.File.stdin().reader(&buffer);
+    const strnum = try r.interface.takeDelimiterExclusive('\n');
+    const trimnum = std.mem.trim(u8, strnum, "\n");
+    const num: u64 = try std.fmt.parseInt(u64, trimnum, 10);
 
-    var generator: *Generator(fib, .{4}, u64) = try .init(gpa);
+    var generator: *Generator(fib, u64) = try .init(gpa, .{num});
     while (generator.next()) |i| {
-        std.debug.print("Got result from generator: {d}\n", .{i});
+        std.debug.print("{d}\n", .{i});
     }
 
     // std.debug.assert(generator.next() == 1);
