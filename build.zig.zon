@@ -1,7 +1,7 @@
 .{
     .name = .generator,
     .version = "0.0.0",
-    .fingerprint = 0xcaae7b70ed33b1cc, // Changing this has security and trust implications.
+    .fingerprint = 0xcaae7b70ed33b1cc,
     .minimum_zig_version = "0.15.2",
     .dependencies = .{},
     .paths = .{
