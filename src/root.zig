@@ -286,26 +286,21 @@ fn fib(y: Yielder(u64), max: u64) void {
 
 // TODO: Convert main function to a test in preparation for deployment to github
 // TODO: Comment out functions better. It's not exactly transparent.
-pub fn main() !void {
-    var gpa_impl = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa_impl.deinit();
-    const gpa = gpa_impl.allocator();
+test "Generator" {
+    // Capable of runtime-known input parameters.
+    // var buffer: [64]u8 = undefined;
+    // var r = std.fs.File.stdin().reader(&buffer);
+    // const strnum = try r.interface.takeDelimiterExclusive('\n');
+    // const trimnum = std.mem.trim(u8, strnum, "\n");
+    // const num: u64 = try std.fmt.parseInt(u64, trimnum, 10);
 
-    var buffer: [64]u8 = undefined;
-    var r = std.fs.File.stdin().reader(&buffer);
-    const strnum = try r.interface.takeDelimiterExclusive('\n');
-    const trimnum = std.mem.trim(u8, strnum, "\n");
-    const num: u64 = try std.fmt.parseInt(u64, trimnum, 10);
+    var generator: *Generator(fib, u64) = try .init(std.testing.allocator, .{4});
+    defer generator.deinit(std.testing.allocator);
 
-    var generator: *Generator(fib, u64) = try .init(gpa, .{num});
-    while (generator.next()) |i| {
-        std.debug.print("{d}\n", .{i});
-    }
-
-    // std.debug.assert(generator.next() == 1);
-    // std.debug.assert(generator.next() == 1);
-    // std.debug.assert(generator.next() == 2);
-    // std.debug.assert(generator.next() == 3);
-    // std.debug.assert(generator.next() == null);
-    generator.deinit(gpa);
+    std.debug.assert(generator.next() == 0);
+    std.debug.assert(generator.next() == 1);
+    std.debug.assert(generator.next() == 1);
+    std.debug.assert(generator.next() == 2);
+    std.debug.assert(generator.next() == 3);
+    std.debug.assert(generator.next() == null);
 }
