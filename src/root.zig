@@ -3,7 +3,7 @@ const Allocator = std.mem.Allocator;
 
 // Manipulated version of the standard lib `std.meta.ArgsTuple` function that removes the first argument from the resulting tuple
 // so that the yielder interface isn't required of the user
-pub fn ArgsTupleMinusFirst(comptime Function: type) type {
+fn ArgsTupleMinusFirst(comptime Function: type) type {
     const info = @typeInfo(Function);
     if (info != .@"fn")
         @compileError("ArgsTuple expects a function type");
@@ -59,7 +59,7 @@ pub fn Yielder(T: type) type {
         ctx: *anyopaque,
         vtable: *const VTable,
 
-        fn yield(self: Self, data: T) void {
+        pub fn yield(self: Self, data: T) void {
             self.vtable.yield(self.ctx, data);
         }
     };
@@ -158,7 +158,7 @@ pub fn Generator(f: anytype, T: type) type {
             return self;
         }
 
-        pub fn yield(ctx: *anyopaque, data: T) void {
+        fn yield(ctx: *anyopaque, data: T) void {
             const self: *Self = @ptrCast(@alignCast(ctx));
             @memcpy(&self.result, std.mem.asBytes(&data));
             Self.switch_context(&self.current, &self.idle);
@@ -186,7 +186,7 @@ pub fn Generator(f: anytype, T: type) type {
             return result;
         }
 
-        pub inline fn switch_context(from: *Context, to: *Context) void {
+        inline fn switch_context(from: *Context, to: *Context) void {
             // leaq 0f sets to the next '0' label after the current rip. (Which is at the end of this block.)
             asm volatile (
                 \\ leaq 0f(%%rip), %%rdx
