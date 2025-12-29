@@ -150,7 +150,6 @@ pub fn Generator(f: anytype, T: type) type {
             // Prime the values that will be used if the function returns
             self.current.rbp = @intFromPtr(self.stack.ptr) + (self.stack.len);
             self.current.rsp = @intFromPtr(self.stack.ptr) + (self.stack.len);
-            // @as(*u64, @ptrFromInt(self.current.rsp)).* = @intFromPtr(&TypeErased.start); // Set the function to be executed for generation
             self.current.rip = @intFromPtr(&TypeErased.start);
 
             return self;
