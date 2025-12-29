@@ -151,7 +151,7 @@ pub fn Generator(f: anytype, T: type) type {
             self.current.rbp = @intFromPtr(self.stack.ptr) + (self.stack.len);
             self.current.rsp = @intFromPtr(self.stack.ptr) + (self.stack.len);
             @as(*u64, @ptrFromInt(self.current.rsp)).* = @intFromPtr(&TypeErased.start); // Set the function to be executed for generation
-            self.current.rsp -= 8;
+            // self.current.rsp -= 8;
 
             self.current.rip = @intFromPtr(&TypeErased.start);
 
@@ -284,7 +284,6 @@ fn fib(y: Yielder(u64), max: u64) void {
     }
 }
 
-// TODO: Comment out functions better. It's not exactly transparent.
 test "Generator" {
     // Capable of runtime-known input parameters.
     // var buffer: [64]u8 = undefined;
