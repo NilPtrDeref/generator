@@ -281,7 +281,17 @@ fn fib(y: Yielder(u64), max: u64) void {
     }
 }
 
-test "Generator" {
+fn allocating(y: Yielder(u64), allocator: Allocator) void {
+    const allocated = allocator.alloc(u8, 4) catch unreachable;
+    defer allocator.free(allocated);
+
+    @memset(allocated, 0);
+    for (0..allocated.len) |i| {
+        y.yield(allocated[i] + i);
+    }
+}
+
+test "Generator General" {
     // Capable of runtime-known input parameters.
     // var buffer: [64]u8 = undefined;
     // var r = std.fs.File.stdin().reader(&buffer);
@@ -294,6 +304,25 @@ test "Generator" {
 
     std.debug.assert(generator.next() == 0);
     std.debug.assert(generator.next() == 1);
+    std.debug.assert(generator.next() == 1);
+    std.debug.assert(generator.next() == 2);
+    std.debug.assert(generator.next() == 3);
+    std.debug.assert(generator.next() == null);
+}
+
+// FIXME: Allocating inside of coroutine is busted for some reason.
+test "Generator Allocating" {
+    // Capable of runtime-known input parameters.
+    // var buffer: [64]u8 = undefined;
+    // var r = std.fs.File.stdin().reader(&buffer);
+    // const strnum = try r.interface.takeDelimiterExclusive('\n');
+    // const trimnum = std.mem.trim(u8, strnum, "\n");
+    // const num: u64 = try std.fmt.parseInt(u64, trimnum, 10);
+
+    var generator: *Generator(allocating, u64) = try .init(std.testing.allocator, .{std.testing.allocator});
+    defer generator.deinit(std.testing.allocator);
+
+    std.debug.assert(generator.next() == 0);
     std.debug.assert(generator.next() == 1);
     std.debug.assert(generator.next() == 2);
     std.debug.assert(generator.next() == 3);
