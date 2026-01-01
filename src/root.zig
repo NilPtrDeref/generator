@@ -39,6 +39,7 @@ pub const StackInfo = struct {
             info.valgrind_stack_id = std.valgrind.stackRegister(allocation[page_size..]);
         }
     }
+
     pub fn deinit(info: *StackInfo) void {
         if (builtin.mode == .Debug and builtin.valgrind_support) {
             if (info.valgrind_stack_id != 0) {
