@@ -96,6 +96,7 @@ pub fn Generator(f: anytype, T: type) type {
         }
     }
 
+    const Fn = @typeInfo(@TypeOf(f)).@"fn";
     const FullArgs = std.meta.ArgsTuple(@TypeOf(f));
     const args_fields = std.meta.fields(FullArgs);
     comptime var user_types: [args_fields.len - 1]type = undefined;
@@ -111,6 +112,7 @@ pub fn Generator(f: anytype, T: type) type {
             ready,
             running,
             finished,
+            @"error",
         };
 
         // Manage stack pointers for the caller and the current generator
@@ -125,6 +127,7 @@ pub fn Generator(f: anytype, T: type) type {
         args: Args,
         result: [@sizeOf(T)]u8,
         result_align: u32 = @alignOf(T),
+        @"error": ?anyerror,
 
         // Stack of the generator coroutine
         stack: StackInfo,
@@ -176,7 +179,16 @@ pub fn Generator(f: anytype, T: type) type {
             const s: *Self = @fieldParentPtr("current", current);
 
             s.state = .running;
-            @call(.auto, f, .{s.interface} ++ s.args);
+            if (Fn.return_type != null and @typeInfo(Fn.return_type.?) == .error_union) {
+                _ = @call(.auto, f, .{s.interface} ++ s.args) catch |e| {
+                    s.state = .@"error";
+                    s.@"error" = e;
+                    Self.switch_context(&s.current, &s.idle);
+                    unreachable;
+                };
+            } else {
+                @call(.auto, f, .{s.interface} ++ s.args);
+            }
 
             // When the generator function returns, we should mark the Generator as finished and then switch back to the calling context
             s.state = .finished;
@@ -188,6 +200,15 @@ pub fn Generator(f: anytype, T: type) type {
         fn yield(ctx: *anyopaque, data: T) void {
             const self: *Self = @ptrCast(@alignCast(ctx));
             @memcpy(&self.result, std.mem.asBytes(&data));
+
+            // If the return type is an error union and that union is an error, we mark the self state as .finished
+            if (@typeInfo(T) == .error_union) {
+                if (data) |_| {} else |e| {
+                    self.state = .@"error";
+                    self.@"error" = e;
+                }
+            }
+
             Self.switch_context(&self.current, &self.idle);
         }
 
@@ -196,13 +217,13 @@ pub fn Generator(f: anytype, T: type) type {
                 .ready, .running => {
                     Self.switch_context(&self.idle, &self.current);
                 },
-                .finished => {
+                .finished, .@"error" => {
                     return null;
                 },
             }
 
             // Check after the ready or running state to make sure that the last call into the generator function didn't mark it as finished
-            if (self.state == .finished) return null;
+            if (self.state == .finished or self.state == .@"error") return null;
 
             var result: T = undefined;
             @memcpy(std.mem.asBytes(&result), &self.result);
