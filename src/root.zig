@@ -153,25 +153,13 @@ pub fn Generator(f: anytype, T: type) type {
             // Initialize stack
             // Prime the values that will be used if the function returns
             self.current.rbp = 0;
-            self.current.rsp = self.stack.top;
-            self.current.rip = @intFromPtr(&entrypoint);
+            self.current.rsp = self.stack.top - 8; // Make sure that the push of the %rbp doesn't misalign the stack.
+            self.current.rip = @intFromPtr(&Self.entrypoint);
 
             return self;
         }
 
-        // Must have an entrypoint function that adds an address to the stack so that the start method call doesn't misalign the stack
-        fn entrypoint() callconv(.naked) noreturn {
-            asm volatile (
-                \\ leaq 1f(%%rip), %%rax
-                \\ pushq %%rax
-                \\ jmpq *%[f]
-                \\1:
-                :
-                : [f] "{rdx}" (&start),
-            );
-        }
-
-        fn start() callconv(.c) noreturn {
+        fn entrypoint() callconv(.c) noreturn {
             const current: *Context = asm volatile (
                 \\
                 : [ret] "={rcx}" (-> *Context),
